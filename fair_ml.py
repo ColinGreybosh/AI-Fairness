@@ -61,6 +61,7 @@ from common_utils import compute_metrics
 #from myutils import balance
 from oversample import synthetic
 from oversample import label_bias, selection_bias 
+from plot_baseline import plot_baseline
 
 # construct argument parser
 import argparse
@@ -74,15 +75,18 @@ args = vars(ap.parse_args())
 
 DATASET = args["data"]
 BASELINE = args["classifier"]
-MITIGATOR = args["mitigator"]
-if not MITIGATOR:
+if not args["mitigator"]:
     # mitigator to compare with
     MITIGATOR = 'rew'
+else:
+    MITIGATOR = args["mitigator"]
+
 BIAS = float(args["bias"])
-OS_MODE = int(args["os"])
-if not OS_MODE:
+if not args["os"]:
     #defautl oversampleing mode: unprivileged favor
     OS_MODE = 2 
+else:
+    OS_MODE = int(args["os"])
 
 # global constants
 if BASELINE == 'svm' or BASELINE == 'nn':
@@ -211,10 +215,6 @@ elif DATASET == 'german':
 
         def default_preprocessing(df):
             """Adds a derived sex attribute based on personal_status."""
-            # TODO: ignores the value of privileged_classes for 'sex'
-            #status_map = {'A91': 'male', 'A93': 'male', 'A94': 'male',
-            #              'A92': 'female', 'A95': 'female'}
-            #df['sex'] = df['personal_status'].replace(status_map)
 
             status_map = {'A201': 'Yes', 'A202': 'No'} 
             df['foreign'] = df['foreign_worker'].replace(status_map)
@@ -614,15 +614,15 @@ def egr_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, egr_m
 
     # set up dataset
     if SCALER:
-        pr_orig_scaler = StandardScaler()
+        egr_orig_scaler = StandardScaler()
         dataset = dataset_orig_train.copy(deepcopy=True)
-        dataset.features = pr_orig_scaler.fit_transform(dataset.features)
+        dataset.features = egr_orig_scaler.fit_transform(dataset.features)
 
         dataset_val_pred = dataset_orig_val.copy(deepcopy=True)
-        dataset_val_pred.features = pr_orig_scaler.transform(dataset_val_pred.features)
+        dataset_val_pred.features = egr_orig_scaler.transform(dataset_val_pred.features)
 
         dataset_test_pred = dataset_orig_test.copy(deepcopy=True)
-        dataset_test_pred.features = pr_orig_scaler.transform(dataset_test_pred.features)
+        dataset_test_pred.features = egr_orig_scaler.transform(dataset_test_pred.features)
 
     else:
         dataset = dataset_orig_train.copy(deepcopy=True)
@@ -993,49 +993,21 @@ def ro_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, ro_ori
 #         Main            # 
 ###########################
 
-# loop ten times 
-N = 2 
+# loop N times 
+N = 10 
 # percentage of favor and unfavor
 priv_metric_orig = defaultdict(float)
 favor_metric_orig = defaultdict(float)
 favor_metric_transf = defaultdict(float)
 
-lr_orig_metrics = defaultdict(list)
-rf_orig_metrics = defaultdict(list)
-svm_orig_metrics = defaultdict(list)
-nn_orig_metrics = defaultdict(list)
-
-lr_transf_metrics = defaultdict(list) 
-rf_transf_metrics = defaultdict(list) 
-svm_transf_metrics = defaultdict(list) 
-nn_transf_metrics = defaultdict(list) 
-
-lr_reweigh_metrics = defaultdict(list) 
-rf_reweigh_metrics = defaultdict(list) 
-svm_reweigh_metrics = defaultdict(list) 
-nn_reweigh_metrics = defaultdict(list) 
-
-lr_dir_metrics = defaultdict(list) 
-rf_dir_metrics = defaultdict(list) 
-svm_dir_metrics = defaultdict(list) 
-nn_dir_metrics = defaultdict(list) 
-
-lr_egr_metrics = defaultdict(list) 
-rf_egr_metrics = defaultdict(list) 
-svm_egr_metrics = defaultdict(list) 
-nn_egr_metrics = defaultdict(list) 
-
-pr_orig_metrics = defaultdict(list) 
-
-lr_cpp_metrics = defaultdict(list) 
-rf_cpp_metrics = defaultdict(list) 
-svm_cpp_metrics = defaultdict(list) 
-nn_cpp_metrics = defaultdict(list) 
-
-lr_ro_metrics = defaultdict(list) 
-rf_ro_metrics = defaultdict(list) 
-svm_ro_metrics = defaultdict(list) 
-nn_ro_metrics = defaultdict(list) 
+orig_metrics = defaultdict(list)
+transf_metrics = defaultdict(list) 
+reweigh_metrics = defaultdict(list) 
+dir_metrics = defaultdict(list) 
+egr_metrics = defaultdict(list) 
+pr_metrics = defaultdict(list) 
+cpp_metrics = defaultdict(list) 
+ro_metrics = defaultdict(list) 
 
 p = 0.7
 for i in range(N):
@@ -1089,324 +1061,74 @@ for i in range(N):
 
     print(dataset_orig_train.features.shape, dataset_orig_val.features.shape, dataset_orig_test.features.shape)
 
-    if BASELINE == 'lr':
-        #######################################################################
-        #                      Logistic Regression                            #
-        #######################################################################
-        print('\n##########################################################\n')
-        print('[INFO] Starting Logistic Regression Experiment ......')
-        print('\n##########################################################\n\n')
+    print('\n##########################################################\n')
+    print('[INFO] Starting ' + BASELINE + ' Experiment ......')
+    print('\n##########################################################\n\n')
+    print('\n------------------------------\n')
+    print('[INFO] ' + BASELINE + ' Original Results......')
+    print('\n------------------------------\n')
+    orig_metrics = orig_no_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, BASELINE, orig_metrics, SCALER)
 
-        # Logistic Regression Original
+    print('\n------------------------------\n')
+    print('[INFO] LR Random Oversampling ......')
+    print('\n------------------------------\n')
+    metric_transf_train, transf_metrics = synth_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, unprivileged_groups, base_rate_privileged, base_rate_unprivileged, BASELINE, transf_metrics, f_label, uf_label, SCALER)
+
+    # statistics of favored/positive class AFTER transf 
+    favor_metric_transf['total_favor'] += metric_transf_train.base_rate()
+    favor_metric_transf['total_unfavor'] += 1 - metric_transf_train.base_rate()
+    favor_metric_transf['priv_favor'] += metric_transf_train.base_rate(privileged = True)
+    favor_metric_transf['priv_unfavor'] += 1 - metric_transf_train.base_rate(privileged = True)
+    favor_metric_transf['unpriv_favor'] += metric_transf_train.base_rate(privileged = False)
+    favor_metric_transf['unpriv_unfavor'] += 1 - metric_transf_train.base_rate(privileged = False)
+
+    if MITIGATOR == 'dir' or MITIGATOR == "all":
+        # Disparat Impact Remover Mitigator
+        print('\n------------------------------\n')
+        print('[INFO] '+BASELINE+' preprocessing--disparat impact remover ......')
+        print('\n------------------------------\n')
+        dir_metrics = dir_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test,  sens_attr, BASELINE, dir_metrics, SCALER)
+
+    if MITIGATOR == 'rew'  or MITIGATOR == "all":
+        # Reweighing Mitigator 
 
         print('\n------------------------------\n')
-        print('[INFO] LR Original Results......')
+        print('[INFO] ' +BASELINE+' preprocessing--reweighting ......')
         print('\n------------------------------\n')
-        lr_orig_metrics = orig_no_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, 'lr', lr_orig_metrics, SCALER)
+        reweigh_metrics = reweigh_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test,  unprivileged_groups, privileged_groups, BASELINE, reweigh_metrics, SCALER)
 
 
-        # Logistic Regression Oversampling  Mitigator 
-
-        print('\n------------------------------\n')
-        print('[INFO] LR Random Oversampling ......')
-        print('\n------------------------------\n')
-        metric_transf_train, lr_transf_metrics = synth_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, unprivileged_groups, base_rate_privileged, base_rate_unprivileged, 'lr', lr_transf_metrics, f_label, uf_label, SCALER)
-
-        # statistics of favored/positive class AFTER transf 
-        favor_metric_transf['total_favor'] += metric_transf_train.base_rate()
-        favor_metric_transf['total_unfavor'] += 1 - metric_transf_train.base_rate()
-        favor_metric_transf['priv_favor'] += metric_transf_train.base_rate(privileged = True)
-        favor_metric_transf['priv_unfavor'] += 1 - metric_transf_train.base_rate(privileged = True)
-        favor_metric_transf['unpriv_favor'] += metric_transf_train.base_rate(privileged = False)
-        favor_metric_transf['unpriv_unfavor'] += 1 - metric_transf_train.base_rate(privileged = False)
-
-        if MITIGATOR == 'dir':
-            # Logistic Regression Disparat Impact Remover Mitigator
-
-            print('\n------------------------------\n')
-            print('[INFO] LR preprocessing--disparat impact remover ......')
-            print('\n------------------------------\n')
-            lr_dir_metrics = dir_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test,  sens_attr, 'lr', lr_dir_metrics, SCALER)
-
-
-        if MITIGATOR == 'rew':
-            # Logistic Regression Reweighing Mitigator 
-
-            print('\n------------------------------\n')
-            print('[INFO] LR preprocessing--reweighting ......')
-            print('\n------------------------------\n')
-            lr_reweigh_metrics = reweigh_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test,  unprivileged_groups, privileged_groups, 'lr', lr_reweigh_metrics, SCALER)
-
-
-        if MITIGATOR == 'egr':
-            # Logistic Regression Exponentiation Gradient Reduction 
-
-            print('\n------------------------------\n')
-            print('\n[INFO:] LR in-processing Exponentiation Gradient Reduction ...... \n')
-            print('\n------------------------------\n')
-            lr_egr_metrics = egr_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, lr_egr_metrics, 'lr', SCALER)
-
-
-        if MITIGATOR == 'pr':
-
-            # Logistic Regression Prejudice Remover 
-
-            print('\n------------------------------\n')
-            print('\n[INFO:] LR in-processing Prejudice Remover ...... \n')
-            print('\n------------------------------\n')
-            pr_orig_metrics = pr_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, pr_orig_metrics, SCALER)
-
-
-        if MITIGATOR == 'cpp':
-            # Logistic Regression CalibratedEqPostProcessing 
-
-            print('\n------------------------------\n')
-            print('\n[INFO:] LR post-processing Calibrated Equal Odds ......\n')
-            print('\n------------------------------\n')
-            lr_cpp_metrics = cpp_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, lr_cpp_metrics, 'lr', SCALER)
-
-
-        if MITIGATOR == 'ro':
-            # Logistic Regression RejectOptionClassification 
-
-            print('\n------------------------------\n')
-            print('\n[INFO:] LR post-processing Reject Option Classification ......\n')
-            print('\n------------------------------\n')
-            lr_ro_metrics = ro_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, lr_ro_metrics, 'lr', SCALER)
-
-
-    if BASELINE == 'rf':
-
-        #######################################################################
-        #                          Random Forest                              #
-        #######################################################################
-        print('\n##########################################################\n')
-        print('[INFO] Starting Random Forest Experiment ......')
-        print('\n##########################################################\n\n')
-
-        # Random Forest Original
+    if MITIGATOR == 'egr'  or MITIGATOR == "all":
+        # Exponentiation Gradient Reduction 
 
         print('\n------------------------------\n')
-        print('\n\n[INFO] RF Original ......')
+        print('\n[INFO:]'+BASELINE+' in-processing Exponentiation Gradient Reduction ...... \n')
         print('\n------------------------------\n')
-        rf_orig_metrics = orig_no_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, 'rf', rf_orig_metrics, SCALER)
+        egr_metrics = egr_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, egr_metrics, BASELINE, SCALER)
 
 
-        # Random Forest Oversampling Mitigator 
-
+    if BASELINE == 'lr' and (MITIGATOR == 'pr'  or MITIGATOR == "all"):
+        # Prejudice Remover 
         print('\n------------------------------\n')
-        print('[INFO] RF Random Oversampling ......')
+        print('\n[INFO:] '+BASELINE+' in-processing Prejudice Remover ...... \n')
         print('\n------------------------------\n')
-        metric_transf_train, rf_transf_metrics = synth_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, unprivileged_groups, base_rate_privileged, base_rate_unprivileged, 'rf', rf_transf_metrics, f_label, uf_label, SCALER)
-
-        # statistics of favored/positive class AFTER transf
-        favor_metric_transf['total_favor'] += metric_transf_train.base_rate()
-        favor_metric_transf['total_unfavor'] += 1 - metric_transf_train.base_rate()
-        favor_metric_transf['priv_favor'] += metric_transf_train.base_rate(privileged = True)
-        favor_metric_transf['priv_unfavor'] += 1 - metric_transf_train.base_rate(privileged = True)
-        favor_metric_transf['unpriv_favor'] += metric_transf_train.base_rate(privileged = False)
-        favor_metric_transf['unpriv_unfavor'] += 1 - metric_transf_train.base_rate(privileged = False)
+        pr_metrics = pr_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, pr_metrics, SCALER)
 
 
-        if  MITIGATOR == 'dir':
-            # Random Forest Disparat Impact Remover Mitigator
-
-            print('\n------------------------------\n')
-            print('[INFO] RF preprocessing--disparat impact remover ......')
-            print('\n------------------------------\n')
-            rf_dir_metrics = dir_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test,  sens_attr, 'rf', rf_dir_metrics, SCALER)
-
-
-        if MITIGATOR == 'rew':
-            # Random Forest Reweighing Mitigator 
-
-            print('\n------------------------------\n')
-            print('[INFO] RF Reweighing ......')
-            print('\n------------------------------\n')
-            rf_reweigh_metrics = reweigh_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test,  unprivileged_groups, privileged_groups, 'rf', rf_reweigh_metrics, SCALER)
-
-
-        if MITIGATOR == 'egr':
-            # Random Forest Exponentiation Gradient Reduction 
-
-            print('\n------------------------------\n')
-            print('\n[INFO:] RF in-processing Exponentiation Gradient Reduction ...... \n')
-            print('\n------------------------------\n')
-            rf_egr_metrics = egr_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, rf_egr_metrics, 'rf', SCALER)
-
-
-        if MITIGATOR == 'cpp':
-            # Random Forest CalibratedEqPostProcessing 
-
-            print('\n------------------------------\n')
-            print('\n[INFO:] RF post-processing Calibrated Equal Odds ......\n')
-            print('\n------------------------------\n')
-            rf_cpp_metrics = cpp_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, rf_cpp_metrics, 'rf', SCALER)
-
-
-        if MITIGATOR == 'ro':
-            # Random Forest Post-processing --- RejectOptionClassification 
-
-            print('\n------------------------------\n')
-            print('\n[INFO:] Reject Option Classification (post-processing)\n')
-            print('\n------------------------------\n')
-            rf_ro_metrics = ro_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, rf_ro_metrics, 'rf', SCALER)
-
-    if BASELINE == 'svm':
-
-        #######################################################################
-        #                      Support Vector Machine                         #
-        #######################################################################
-        print('\n##########################################################\n')
-        print('[INFO] Starting Support Vector Machine Experiment ......')
-        print('\n##########################################################\n\n')
-
-        # SVM Original
-
+    if MITIGATOR == 'cpp'  or MITIGATOR == "all":
+        # CalibratedEqPostProcessing 
         print('\n------------------------------\n')
-        print('\n\n[INFO] SVM Original ......')
+        print('\n[INFO:]'+BASELINE+' post-processing Calibrated Equal Odds ......\n')
         print('\n------------------------------\n')
-        svm_orig_metrics = orig_no_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, 'svm', svm_orig_metrics, SCALER)
+        cpp_metrics = cpp_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, cpp_metrics, BASELINE, SCALER)
 
 
-        # SVM Synth Mitigator 
-
+    if MITIGATOR == 'ro'  or MITIGATOR == "all":
+        # RejectOptionClassification 
         print('\n------------------------------\n')
-        print('[INFO] SVM Random Oversampling ......')
+        print('\n[INFO:] '+BASELINE+' post-processing Reject Option Classification ......\n')
         print('\n------------------------------\n')
-        metric_transf_train, svm_transf_metrics = synth_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, unprivileged_groups, base_rate_privileged, base_rate_unprivileged, 'svm', svm_transf_metrics, f_label, uf_label, SCALER)
-
-        # statistics of favored/positive class AFTER transf
-        favor_metric_transf['total_favor'] += metric_transf_train.base_rate()
-        favor_metric_transf['total_unfavor'] += 1 - metric_transf_train.base_rate()
-        favor_metric_transf['priv_favor'] += metric_transf_train.base_rate(privileged = True)
-        favor_metric_transf['priv_unfavor'] += 1 - metric_transf_train.base_rate(privileged = True)
-        favor_metric_transf['unpriv_favor'] += metric_transf_train.base_rate(privileged = False)
-        favor_metric_transf['unpriv_unfavor'] += 1 - metric_transf_train.base_rate(privileged = False)
-
-
-        if MITIGATOR == 'dir':
-            # SVM Disparat Impact Remover Mitigator
-
-            print('\n------------------------------\n')
-            print('[INFO] SVM --disparat impact remover ......')
-            print('\n------------------------------\n')
-            svm_dir_metrics = dir_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test,  sens_attr, 'svm', svm_dir_metrics, SCALER)
-
-
-        if MITIGATOR == 'rew':
-            # SVM Reweighing Mitigator 
-
-            print('\n------------------------------\n')
-            print('[INFO] SVM Reweighing ......')
-            print('\n------------------------------\n')
-            svm_reweigh_metrics = reweigh_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test,  unprivileged_groups, privileged_groups, 'svm', svm_reweigh_metrics, SCALER)
-
-
-        if MITIGATOR == 'egr':
-            # SVM In-processing --- Exponentiation Gradient Reduction 
-
-            print('\n------------------------------\n')
-            print('\n[INFO:] SVM in-processing Exponentiation Gradient Reduction ...... \n')
-            print('\n------------------------------\n')
-            svm_egr_metrics = egr_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, svm_egr_metrics, 'svm', SCALER)
-
-
-        if MITIGATOR == 'cpp':
-            # SVM CalibratedEqPostProcessing 
-
-            print('\n------------------------------\n')
-            print('\n[INFO:] SVM post-processing Calibrated Equal Odds ......\n')
-            print('\n------------------------------\n')
-            svm_cpp_metrics = cpp_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, svm_cpp_metrics, 'svm', SCALER)
-
-
-        if MITIGATOR == 'ro':
-            # SVM Post-processing --- RejectOptionClassification 
-
-            print('\n------------------------------\n')
-            print('\n[INFO:] Reject Option Classification (post-processing)\n')
-            print('\n------------------------------\n')
-            svm_ro_metrics = ro_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, svm_ro_metrics, 'svm', SCALER)
-
-    if BASELINE == 'nn':
-
-        #######################################################################
-        #                      Multi-layer Neural Network                     #
-        #######################################################################
-        print('\n##########################################################\n')
-        print('[INFO] Starting Multi-layer Neural Network  Experiment ......')
-        print('\n##########################################################\n\n')
-
-        # NN Original
-
-        print('\n------------------------------\n')
-        print('\n\n[INFO] NN Original ......')
-        print('\n------------------------------\n')
-        nn_orig_metrics = orig_no_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, 'nn', nn_orig_metrics, SCALER)
-
-
-        # NN Synth Mitigator 
-
-        print('\n------------------------------\n')
-        print('[INFO] NN Random Oversampling ......')
-        print('\n------------------------------\n')
-        metric_transf_train, nn_transf_metrics = synth_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, unprivileged_groups, base_rate_privileged, base_rate_unprivileged, 'nn', nn_transf_metrics, f_label, uf_label, SCALER)
-
-                # statistics of favored/positive class AFTER transf
-        favor_metric_transf['total_favor'] += metric_transf_train.base_rate()
-        favor_metric_transf['total_unfavor'] += 1 - metric_transf_train.base_rate()
-        favor_metric_transf['priv_favor'] += metric_transf_train.base_rate(privileged = True)
-        favor_metric_transf['priv_unfavor'] += 1 - metric_transf_train.base_rate(privileged = True)
-        favor_metric_transf['unpriv_favor'] += metric_transf_train.base_rate(privileged = False)
-        favor_metric_transf['unpriv_unfavor'] += 1 - metric_transf_train.base_rate(privileged = False)
-
-
-        if MITIGATOR == 'dir':
-            # NN Disparat Impact Remover Mitigator
-
-            print('\n------------------------------\n')
-            print('[INFO] NN -- Pre-processing disparat impact remover ......')
-            print('\n------------------------------\n')
-            nn_dir_metrics = dir_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test,  sens_attr, 'nn', nn_dir_metrics, SCALER)
-
-
-        if MITIGATOR == 'rew':
-            # NN Reweighing Mitigator 
-
-            print('\n------------------------------\n')
-            print('[INFO] NN -- Pre-processing Reweighing ......')
-            print('\n------------------------------\n')
-            nn_reweigh_metrics = reweigh_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test,  unprivileged_groups, privileged_groups, 'nn', nn_reweigh_metrics, SCALER)
-
-
-        if MITIGATOR == 'egr':
-            # NN In-processing --- Exponentiation Gradient Reduction 
-
-            print('\n------------------------------\n')
-            print('\n[INFO:] NN in-processing Exponentiation Gradient Reduction ...... \n')
-            print('\n------------------------------\n')
-            nn_egr_metrics = egr_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, nn_egr_metrics, 'nn', SCALER)
-
-
-        if MITIGATOR == 'cpp':
-            # NN CalibratedEqPostProcessing 
-
-            print('\n------------------------------\n')
-            print('\n[INFO:] NN post-processing Calibrated Equal Odds ......\n')
-            print('\n------------------------------\n')
-            nn_cpp_metrics = cpp_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, nn_cpp_metrics, 'nn', SCALER)
-            #nn_cpp_metrics = cpp_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, nn_cpp_metrics, 'nn', True)
-
-
-        if MITIGATOR == 'ro':
-            # NN Post-processing --- RejectOptionClassification 
-
-            print('\n------------------------------\n')
-            print('\n[INFO:] Reject Option Classification (post-processing)\n')
-            print('\n------------------------------\n')
-            nn_ro_metrics = ro_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, nn_ro_metrics, 'nn', SCALER)
-
+        ro_metrics = ro_mitigator(dataset_orig_train, dataset_orig_val, dataset_orig_test, ro_metrics, BASELINE, SCALER)
 
 # dataframe to display favored  metrics
 
@@ -1433,80 +1155,24 @@ print('\n\n\n')
 
 # dataframe to display fairness metrics
 # error metrics
-lr_orig_error_metrics = {k: [statistics.stdev(v)] for (k,v) in lr_orig_metrics.items()}
-rf_orig_error_metrics = {k: [statistics.stdev(v)] for (k,v) in rf_orig_metrics.items()}
-svm_orig_error_metrics = {k: [statistics.stdev(v)] for (k,v) in svm_orig_metrics.items()}
-nn_orig_error_metrics = {k: [statistics.stdev(v)] for (k,v) in nn_orig_metrics.items()}
-
-lr_transf_error_metrics = {k: [statistics.stdev(v)] for (k,v) in lr_transf_metrics.items()}
-rf_transf_error_metrics = {k: [statistics.stdev(v)] for (k,v) in rf_transf_metrics.items()}
-svm_transf_error_metrics = {k: [statistics.stdev(v)] for (k,v) in svm_transf_metrics.items()}
-nn_transf_error_metrics = {k: [statistics.stdev(v)] for (k,v) in nn_transf_metrics.items()}
-
-lr_reweigh_error_metrics = {k: [statistics.stdev(v)] for (k,v) in lr_reweigh_metrics.items()}
-rf_reweigh_error_metrics = {k: [statistics.stdev(v)] for (k,v) in rf_reweigh_metrics.items()}
-svm_reweigh_error_metrics = {k: [statistics.stdev(v)] for (k,v) in svm_reweigh_metrics.items()}
-nn_reweigh_error_metrics = {k: [statistics.stdev(v)] for (k,v) in nn_reweigh_metrics.items()}
-
-lr_dir_error_metrics = {k: [statistics.stdev(v)] for (k,v) in lr_dir_metrics.items()}
-rf_dir_error_metrics = {k: [statistics.stdev(v)] for (k,v) in rf_dir_metrics.items()}
-svm_dir_error_metrics = {k: [statistics.stdev(v)] for (k,v) in svm_dir_metrics.items()}
-nn_dir_error_metrics = {k: [statistics.stdev(v)] for (k,v) in nn_dir_metrics.items()}
-
-lr_egr_error_metrics = {k: [statistics.stdev(v)] for (k,v) in lr_egr_metrics.items()}
-rf_egr_error_metrics = {k: [statistics.stdev(v)] for (k,v) in rf_egr_metrics.items()}
-svm_egr_error_metrics = {k: [statistics.stdev(v)] for (k,v) in svm_egr_metrics.items()}
-nn_egr_error_metrics = {k: [statistics.stdev(v)] for (k,v) in nn_egr_metrics.items()}
-
-pr_orig_error_metrics = {k: [statistics.stdev(v)] for (k,v) in pr_orig_metrics.items()}
-
-lr_cpp_error_metrics = {k: [statistics.stdev(v)] for (k,v) in lr_cpp_metrics.items()}
-rf_cpp_error_metrics = {k: [statistics.stdev(v)] for (k,v) in rf_cpp_metrics.items()}
-svm_cpp_error_metrics = {k: [statistics.stdev(v)] for (k,v) in svm_cpp_metrics.items()}
-nn_cpp_error_metrics = {k: [statistics.stdev(v)] for (k,v) in nn_cpp_metrics.items()}
-
-lr_ro_error_metrics = {k: [statistics.stdev(v)] for (k,v) in lr_ro_metrics.items()}
-rf_ro_error_metrics = {k: [statistics.stdev(v)] for (k,v) in rf_ro_metrics.items()}
-svm_ro_error_metrics = {k: [statistics.stdev(v)] for (k,v) in svm_ro_metrics.items()}
-nn_ro_error_metrics = {k: [statistics.stdev(v)] for (k,v) in nn_ro_metrics.items()}
+orig_error_metrics = {k: [statistics.stdev(v)] for (k,v) in orig_metrics.items()}
+transf_error_metrics = {k: [statistics.stdev(v)] for (k,v) in transf_metrics.items()}
+reweigh_error_metrics = {k: [statistics.stdev(v)] for (k,v) in reweigh_metrics.items()}
+dir_error_metrics = {k: [statistics.stdev(v)] for (k,v) in dir_metrics.items()}
+egr_error_metrics = {k: [statistics.stdev(v)] for (k,v) in egr_metrics.items()}
+cpp_error_metrics = {k: [statistics.stdev(v)] for (k,v) in cpp_metrics.items()}
+ro_error_metrics = {k: [statistics.stdev(v)] for (k,v) in ro_metrics.items()}
+pr_error_metrics = {k: [statistics.stdev(v)] for (k,v) in pr_metrics.items()}
 
 # mean value metrics
-lr_orig_metrics_mean = {k: [sum(v)/N] for (k,v) in lr_orig_metrics.items()}
-rf_orig_metrics_mean = {k: [sum(v)/N] for (k,v) in rf_orig_metrics.items()}
-svm_orig_metrics_mean = {k: [sum(v)/N] for (k,v) in svm_orig_metrics.items()}
-nn_orig_metrics_mean = {k: [sum(v)/N] for (k,v) in nn_orig_metrics.items()}
-
-lr_transf_metrics_mean = {k: [sum(v)/N] for (k,v) in lr_transf_metrics.items()}
-rf_transf_metrics_mean = {k: [sum(v)/N] for (k,v) in rf_transf_metrics.items()}
-svm_transf_metrics_mean = {k: [sum(v)/N] for (k,v) in svm_transf_metrics.items()}
-nn_transf_metrics_mean = {k: [sum(v)/N] for (k,v) in nn_transf_metrics.items()}
-
-lr_reweigh_metrics_mean = {k:[sum(v)/N] for (k,v) in lr_reweigh_metrics.items()}
-rf_reweigh_metrics_mean = {k: [sum(v)/N] for (k,v) in rf_reweigh_metrics.items()}
-svm_reweigh_metrics_mean = {k: [sum(v)/N] for (k,v) in svm_reweigh_metrics.items()}
-nn_reweigh_metrics_mean = {k: [sum(v)/N] for (k,v) in nn_reweigh_metrics.items()}
-
-lr_dir_metrics_mean = {k:[sum(v)/N] for (k,v) in lr_dir_metrics.items()}
-rf_dir_metrics_mean = {k: [sum(v)/N] for (k,v) in rf_dir_metrics.items()}
-svm_dir_metrics_mean = {k: [sum(v)/N] for (k,v) in svm_dir_metrics.items()}
-nn_dir_metrics_mean = {k: [sum(v)/N] for (k,v) in nn_dir_metrics.items()}
-
-lr_egr_metrics_mean = {k:[sum(v)/N] for (k,v) in lr_egr_metrics.items()}
-rf_egr_metrics_mean = {k: [sum(v)/N] for (k,v) in rf_egr_metrics.items()}
-svm_egr_metrics_mean = {k: [sum(v)/N] for (k,v) in svm_egr_metrics.items()}
-nn_egr_metrics_mean = {k: [sum(v)/N] for (k,v) in nn_egr_metrics.items()}
-
-pr_orig_metrics_mean = {k: [sum(v)/N] for (k,v) in pr_orig_metrics.items()}
-
-lr_cpp_metrics_mean = {k: [sum(v)/N] for (k,v) in lr_cpp_metrics.items()}
-rf_cpp_metrics_mean = {k: [sum(v)/N] for (k,v) in rf_cpp_metrics.items()}
-svm_cpp_metrics_mean = {k: [sum(v)/N] for (k,v) in svm_cpp_metrics.items()}
-nn_cpp_metrics_mean = {k: [sum(v)/N] for (k,v) in nn_cpp_metrics.items()}
-
-lr_ro_metrics_mean = {k: [sum(v)/N] for (k,v) in lr_ro_metrics.items()}
-rf_ro_metrics_mean = {k: [sum(v)/N] for (k,v) in rf_ro_metrics.items()}
-svm_ro_metrics_mean = {k: [sum(v)/N] for (k,v) in svm_ro_metrics.items()}
-nn_ro_metrics_mean = {k: [sum(v)/N] for (k,v) in nn_ro_metrics.items()}
+orig_metrics_mean = {k: [sum(v)/N] for (k,v) in orig_metrics.items()}
+transf_metrics_mean = {k: [sum(v)/N] for (k,v) in transf_metrics.items()}
+reweigh_metrics_mean = {k:[sum(v)/N] for (k,v) in reweigh_metrics.items()}
+dir_metrics_mean = {k:[sum(v)/N] for (k,v) in dir_metrics.items()}
+egr_metrics_mean = {k:[sum(v)/N] for (k,v) in egr_metrics.items()}
+cpp_metrics_mean = {k: [sum(v)/N] for (k,v) in cpp_metrics.items()}
+ro_metrics_mean = {k: [sum(v)/N] for (k,v) in ro_metrics.items()}
+pr_metrics_mean = {k: [sum(v)/N] for (k,v) in pr_metrics.items()}
 
 # Python paired sample t-test
 from scipy.stats import ttest_rel
@@ -1527,132 +1193,26 @@ def acc_diff (a, b):
 pd.set_option('display.multi_sparse', False)
 
 plt.rcParams.update({'font.size': 8}) # must set in top
-def plot_lr():
-    results = [lr_orig_metrics_mean,
-            lr_transf_metrics_mean,
-            lr_dir_metrics_mean,
-            lr_reweigh_metrics_mean,
-            lr_egr_metrics_mean,
-            pr_orig_metrics_mean,
-            lr_cpp_metrics_mean,
-            lr_ro_metrics_mean]
 
+results = [orig_metrics_mean,
+        transf_metrics_mean,
+        dir_metrics_mean,
+        reweigh_metrics_mean,
+        egr_metrics_mean,
+        pr_metrics_mean,
+        cpp_metrics_mean,
+        ro_metrics_mean]
 
-    errors = [lr_orig_error_metrics,
-            lr_transf_error_metrics,
-            lr_dir_error_metrics,
-            lr_reweigh_error_metrics,
-            lr_egr_error_metrics,
-            pr_orig_error_metrics,
-            lr_cpp_error_metrics,
-            lr_ro_error_metrics]
+errors = [orig_error_metrics,
+        transf_error_metrics,
+        dir_error_metrics,
+        reweigh_error_metrics,
+        egr_error_metrics,
+        pr_error_metrics,
+        cpp_error_metrics,
+        ro_error_metrics]
 
-    index = pd.Series(['LR_orig']+ ['LR_syn']+ ['LR_dir']+ ['LR_rew']+ ['LR_egr']+ ['LR_pr']+ ['LR_cpp']+ ['LR_ro'], name='Classifier Bias Mitigator')
-
-    df = pd.concat([pd.DataFrame(metrics) for metrics in results], axis=0).set_index(index)
-    df_error = pd.concat([pd.DataFrame(metrics) for metrics in errors], axis=0).set_index(index)
-    ax = df.plot.bar(yerr=df_error, capsize=4, rot=0, subplots=True, title=['', '', '', '', '', ''], fontsize = 12)
-    plt.savefig('lr_dir_rew_egr_pr_cpp_ro.eps', format='eps')
-    print(df)
-
-def plot_rf():
-    results = [rf_orig_metrics_mean,
-            rf_transf_metrics_mean,
-            rf_dir_metrics_mean,
-            rf_reweigh_metrics_mean,
-            rf_egr_metrics_mean,
-            rf_cpp_metrics_mean,
-            rf_ro_metrics_mean]
-
-
-    errors = [rf_orig_error_metrics,
-            rf_transf_error_metrics,
-            rf_dir_error_metrics,
-            rf_reweigh_error_metrics,
-            rf_egr_error_metrics,
-            rf_cpp_error_metrics,
-            rf_ro_error_metrics]
-
-    index = pd.Series(['RF_orig']+ ['RF_syn']+ ['RF_dir']+ ['RF_rew']+ ['RF_egr']+ ['RF_cpp']+['RF_ro'], name='Classifier Bias Mitigator')
-
-    df = pd.concat([pd.DataFrame(metrics) for metrics in results], axis=0).set_index(index)
-    df_error = pd.concat([pd.DataFrame(metrics) for metrics in errors], axis=0).set_index(index)
-    ax = df.plot.bar(yerr=df_error, capsize=4, rot=0, subplots=True, title=['', '', '', '', '', ''], fontsize = 12)
-    plt.savefig('rf_dir_rew_egr_cpp_ro.eps', format='eps')
-    print(df)
-
-def plot_svm():
-    results = [svm_orig_metrics_mean,
-            svm_transf_metrics_mean,
-            svm_dir_metrics_mean,
-            svm_reweigh_metrics_mean,
-            svm_egr_metrics_mean,
-            svm_cpp_metrics_mean,
-            svm_ro_metrics_mean]
-
-
-    errors = [svm_orig_error_metrics,
-            svm_transf_error_metrics,
-            svm_dir_error_metrics,
-            svm_reweigh_error_metrics,
-            svm_egr_error_metrics,
-            svm_cpp_error_metrics,
-            svm_ro_error_metrics]
-    index = pd.Series(['SVM_orig']+ ['SVM_syn']+ ['SVM_dir']+ ['SVM_rew']+ ['SVM_egr']+ ['SVM_cpp']+ ['SVM_ro'], name='Classifier Bias Mitigator')
-
-    df = pd.concat([pd.DataFrame(metrics) for metrics in results], axis=0).set_index(index)
-    df_error = pd.concat([pd.DataFrame(metrics) for metrics in errors], axis=0).set_index(index)
-    ax = df.plot.bar(yerr=df_error, capsize=4, rot=0, subplots=True, title=['', '', '', '', '', ''], fontsize = 11)
-    plt.savefig('svm_dir_rew_egr_cpp_ro.eps', format='eps')
-    print(df)
-
-
-
-def plot_nn():
-    results = [nn_orig_metrics_mean,
-            nn_transf_metrics_mean,
-            nn_dir_metrics_mean,
-            nn_reweigh_metrics_mean,
-            nn_egr_metrics_mean,
-            nn_cpp_metrics_mean,
-            nn_ro_metrics_mean]
-
-    errors = [nn_orig_error_metrics,
-            nn_transf_error_metrics,
-            nn_dir_error_metrics,
-            nn_reweigh_error_metrics,
-            nn_egr_error_metrics,
-            nn_cpp_error_metrics,
-            nn_ro_error_metrics]
-
-    index = pd.Series(['NN_orig']+ ['NN_syn']+ ['NN_dir']+ ['NN_rew']+ ['NN_egr'] + ['NN_cpp']+['NN_ro'], name='Classifier Bias Mitigator')
-
-    df = pd.concat([pd.DataFrame(metrics) for metrics in results], axis=0).set_index(index)
-    df_error = pd.concat([pd.DataFrame(metrics) for metrics in errors], axis=0).set_index(index)
-    ax = df.plot.bar(yerr=df_error, capsize=4, rot=0, subplots=True, title=['', '', '', '', '', ''], fontsize = 12)
-    plt.savefig('nn_dir_rew_egr_cpp_ro.eps', format='eps')
-    print(df)
-
-if BASELINE == 'lr':
-    plot_lr()
-    stat_lr =  {k: [paired_t(lr_transf_metrics[k], v)] for (k,v) in lr_orig_metrics.items()}
-    print(stat_lr)
-
-if BASELINE == 'rf':
-    plot_rf()
-    stat_rf =  {k: [paired_t(rf_transf_metrics[k], v)] for (k,v) in rf_orig_metrics.items()}
-    print(stat_rf)
-
-
-if BASELINE == 'svm':
-    plot_svm()
-    stat_svm =  {k: [paired_t(svm_transf_metrics[k], v)] for (k,v) in svm_orig_metrics.items()}
-    print(stat_svm)
-
-if BASELINE == 'nn':
-    plot_nn()
-    stat_nn =  {k: [paired_t(nn_transf_metrics[k], v)] for (k,v) in nn_orig_metrics.items()}
-    print(stat_nn)
-
+plot_baseline(results, errors, baseline=BASELINE.upper())
+stat =  {k: [paired_t(transf_metrics[k], v)] for (k,v) in orig_metrics.items()}
+print(stat)
 plt.show()
-
