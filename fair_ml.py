@@ -77,7 +77,7 @@ DATASET = args["data"]
 BASELINE = args["classifier"]
 if not args["mitigator"]:
     # mitigator to compare with
-    MITIGATOR = 'rew'
+    MITIGATOR = 'all'
 else:
     MITIGATOR = args["mitigator"]
 
