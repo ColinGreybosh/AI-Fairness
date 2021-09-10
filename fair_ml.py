@@ -73,7 +73,6 @@ p = 0.8
 # run mitigating algorithms
 for i in range(N):
     # split dataset into train, validation, and test
-    #(dataset_orig_train, dataset_orig_val, dataset_orig_test) = dataset_orig.split([0.5, 0.7], shuffle=True)
     dataset_orig_train, dataset_orig_test = dataset_orig.split([p], shuffle=True)
     dataset_orig_val = dataset_orig_test
     #print(dataset_orig_train.features)
