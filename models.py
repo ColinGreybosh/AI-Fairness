@@ -25,8 +25,6 @@ class BaseModel(object):
     def train(self):
         pass
 
-    def explain(self):
-        pass
 
 
 class LRModel(BaseModel):
