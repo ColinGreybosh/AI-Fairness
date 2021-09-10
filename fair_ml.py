@@ -44,7 +44,7 @@ DISPLAY = False
 THRESH_ARR = 0.5
 
 # loop ten times 
-N = 2 
+N = 10 
 # percentage of favor and unfavor
 priv_metric_orig = defaultdict(float)
 favor_metric_orig = defaultdict(float)
@@ -68,7 +68,7 @@ unprivileged_groups = dataset_builder.unprivileged_groups
 privileged_groups = dataset_builder.privileged_groups
 
 # training data split ratio
-p = 0.7
+p = 0.8
 
 # run mitigating algorithms
 for i in range(N):
