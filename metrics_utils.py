@@ -48,6 +48,7 @@ def test(f_label, uf_label, unprivileged_groups, privileged_groups, dataset, mod
         metric_arrs['unpriv_fnr'].append(metric.false_negative_rate(privileged=False))
         metric_arrs['priv_fpr'].append(metric.false_positive_rate(privileged=True))
         metric_arrs['priv_fnr'].append(metric.false_negative_rate(privileged=True))
+        metric_arrs['df_bias_amp'].append(metric.differential_fairness_bias_amplification())
 
     return metric_arrs
 
@@ -71,6 +72,7 @@ def compute_metrics(dataset_true, dataset_pred,
         metrics['stat_par_diff'] = classified_metric_pred.statistical_parity_difference()
         metrics['eq_opp_diff'] = classified_metric_pred.equal_opportunity_difference()
         metrics['theil_ind'] = classified_metric_pred.theil_index()
+        metrics['df_bias_amp'] = classified_metric_pred.differential_fairness_bias_amplification()
     else:
         metrics['bal_acc'].append(0.5*(classified_metric_pred.true_positive_rate()+
                                                  classified_metric_pred.true_negative_rate()))
@@ -79,6 +81,7 @@ def compute_metrics(dataset_true, dataset_pred,
         metrics['stat_par_diff'].append(classified_metric_pred.statistical_parity_difference())
         metrics['eq_opp_diff'].append(classified_metric_pred.equal_opportunity_difference())
         metrics['theil_ind'].append(classified_metric_pred.theil_index())
+        metrics['df_bias_amp'].append(classified_metric_pred.differential_fairness_bias_amplification())
     
     if disp:
         for k in metrics:
@@ -101,6 +104,7 @@ def describe_metrics(metrics, thresh_arr, TEST=True):
     print("Corresponding statistical parity difference value: {:6.4f}".format(metrics['stat_par_diff'][best_ind]))
     print("Corresponding equal opportunity difference value: {:6.4f}".format(metrics['eq_opp_diff'][best_ind]))
     print("Corresponding Theil index value: {:6.4f}".format(metrics['theil_ind'][best_ind]))
+    print("Corresponding DF bias amplification: {:6.4f}".format(metrics['df_bias_amp'][best_ind]))
 #    print("Corresponding false positive_rate: {:6.4f}".format(metrics['false_positive_rate'][best_ind]))
 #    print("Corresponding false negative_rate: {:6.4f}".format(metrics['false_negative_rate'][best_ind]))
 
