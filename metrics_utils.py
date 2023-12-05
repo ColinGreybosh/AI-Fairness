@@ -39,6 +39,7 @@ def test(f_label, uf_label, unprivileged_groups, privileged_groups, dataset, mod
 
         metric_arrs['bal_acc'].append((metric.true_positive_rate()
                                      + metric.true_negative_rate()) / 2)
+        metric_arrs['acc'].append(metric.accuracy())
         metric_arrs['avg_odds_diff'].append(metric.average_odds_difference())
         metric_arrs['disp_imp'].append(1 - min((metric.disparate_impact()), 1/metric.disparate_impact()))
         metric_arrs['stat_par_diff'].append(metric.statistical_parity_difference())
@@ -98,7 +99,7 @@ def describe_metrics(metrics, thresh_arr, TEST=True):
         print("Threshold corresponding to Best balanced accuracy: {:6.4f}".format(thresh_arr[best_ind]))
     else:
         best_ind = -1
-    print("Accuracy: {:6.4f}".format(metrics['acc'][best_ind]))
+    print("Accuracy: {:6.4f}".format(metrics['acc'][-1]))
     print("Best balanced accuracy: {:6.4f}".format(metrics['bal_acc'][best_ind]))
     #disp_imp_at_best_ind = np.abs(1 - np.array(metrics['disp_imp']))[best_ind]
     disp_imp_at_best_ind = 1 - min(metrics['disp_imp'][best_ind], 1/metrics['disp_imp'][best_ind])
