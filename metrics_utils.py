@@ -67,6 +67,7 @@ def compute_metrics(dataset_true, dataset_pred,
 
         metrics['bal_acc'] = 0.5*(classified_metric_pred.true_positive_rate()+
                                                  classified_metric_pred.true_negative_rate())
+        metrics['acc'] = classified_metric_pred.accuracy()
         metrics['avg_odds_diff'] = classified_metric_pred.average_odds_difference()
         metrics['disp_imp'] = 1-min(classified_metric_pred.disparate_impact(), 1/classified_metric_pred.disparate_impact())
         metrics['stat_par_diff'] = classified_metric_pred.statistical_parity_difference()
@@ -76,6 +77,7 @@ def compute_metrics(dataset_true, dataset_pred,
     else:
         metrics['bal_acc'].append(0.5*(classified_metric_pred.true_positive_rate()+
                                                  classified_metric_pred.true_negative_rate()))
+        metrics['acc'].append(classified_metric_pred.accuracy())
         metrics['avg_odds_diff'].append(classified_metric_pred.average_odds_difference()) 
         metrics['disp_imp'].append(1-min(classified_metric_pred.disparate_impact(), 1/classified_metric_pred.disparate_impact()))
         metrics['stat_par_diff'].append(classified_metric_pred.statistical_parity_difference())
@@ -96,6 +98,7 @@ def describe_metrics(metrics, thresh_arr, TEST=True):
         print("Threshold corresponding to Best balanced accuracy: {:6.4f}".format(thresh_arr[best_ind]))
     else:
         best_ind = -1
+    print("Accuracy: {:6.4f}".format(metrics['acc'][best_ind]))
     print("Best balanced accuracy: {:6.4f}".format(metrics['bal_acc'][best_ind]))
     #disp_imp_at_best_ind = np.abs(1 - np.array(metrics['disp_imp']))[best_ind]
     disp_imp_at_best_ind = 1 - min(metrics['disp_imp'][best_ind], 1/metrics['disp_imp'][best_ind])
